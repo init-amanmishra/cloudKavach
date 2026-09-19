@@ -1,5 +1,6 @@
 # One table holds connections and their scans (see backend/cloudkavach/store.py for the key design).
 resource "aws_dynamodb_table" "main" {
+  #checkov:skip=CKV_AWS_119:Encrypted at rest with the AWS owned key; a customer managed KMS key adds cost without protecting anything more here
   name         = local.name
   billing_mode = "PAY_PER_REQUEST" # no idle cost: pay only for requests
   hash_key     = "pk"

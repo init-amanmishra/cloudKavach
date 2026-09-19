@@ -30,6 +30,7 @@ locals {
 }
 
 resource "aws_apigatewayv2_route" "api" {
+  #checkov:skip=CKV_AWS_309:Every route except POST /connections checks the connection's secret key in the handler; that one only creates a new connection
   for_each  = toset(local.routes)
   api_id    = aws_apigatewayv2_api.main.id
   route_key = each.value
@@ -37,6 +38,8 @@ resource "aws_apigatewayv2_route" "api" {
 }
 
 resource "aws_cloudwatch_log_group" "api_access" {
+  #checkov:skip=CKV_AWS_158:Logs hold no secrets; the default CloudWatch encryption is enough and a KMS key costs extra
+  #checkov:skip=CKV_AWS_338:14 days is enough to debug and keeps storage cost low
   name              = "/aws/apigateway/${local.name}"
   retention_in_days = 14
 }

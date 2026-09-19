@@ -80,11 +80,19 @@ resource "aws_iam_role_policy" "api" {
 }
 
 resource "aws_cloudwatch_log_group" "api" {
+  #checkov:skip=CKV_AWS_158:Logs hold no secrets; the default CloudWatch encryption is enough and a KMS key costs extra
+  #checkov:skip=CKV_AWS_338:14 days is enough to debug and keeps storage cost low
   name              = "/aws/lambda/${local.name}-api"
   retention_in_days = 14
 }
 
 resource "aws_lambda_function" "api" {
+  #checkov:skip=CKV_AWS_117:No private resources to reach; a VPC would only add a NAT Gateway bill
+  #checkov:skip=CKV_AWS_272:Code is built and deployed only by Terraform from this repo
+  #checkov:skip=CKV_AWS_173:Environment variables hold only resource names, no secrets
+  #checkov:skip=CKV_AWS_115:API Gateway throttling already caps request rate
+  #checkov:skip=CKV_AWS_50:Not needed at this scale; CloudWatch logs and alarms cover debugging
+  #checkov:skip=CKV_AWS_116:Called synchronously by API Gateway, so a dead-letter queue never receives anything
   function_name    = "${local.name}-api"
   role             = aws_iam_role.api.arn
   runtime          = "python3.12"
@@ -143,11 +151,19 @@ resource "aws_iam_role_policy" "worker" {
 }
 
 resource "aws_cloudwatch_log_group" "worker" {
+  #checkov:skip=CKV_AWS_158:Logs hold no secrets; the default CloudWatch encryption is enough and a KMS key costs extra
+  #checkov:skip=CKV_AWS_338:14 days is enough to debug and keeps storage cost low
   name              = "/aws/lambda/${local.name}-worker"
   retention_in_days = 14
 }
 
 resource "aws_lambda_function" "worker" {
+  #checkov:skip=CKV_AWS_117:No private resources to reach; a VPC would only add a NAT Gateway bill
+  #checkov:skip=CKV_AWS_272:Code is built and deployed only by Terraform from this repo
+  #checkov:skip=CKV_AWS_173:Environment variables hold only resource names, no secrets
+  #checkov:skip=CKV_AWS_115:API Gateway throttling already caps request rate
+  #checkov:skip=CKV_AWS_50:Not needed at this scale; CloudWatch logs and alarms cover debugging
+  #checkov:skip=CKV_AWS_116:A failed scan is saved as failed in DynamoDB and raises an alarm
   function_name    = "${local.name}-worker"
   role             = aws_iam_role.worker.arn
   runtime          = "python3.12"

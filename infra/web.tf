@@ -1,5 +1,11 @@
 # The web app: a private S3 bucket that only CloudFront can read.
 resource "aws_s3_bucket" "web" {
+  #checkov:skip=CKV_AWS_145:Encrypted with S3 managed keys (SSE-S3)
+  #checkov:skip=CKV_AWS_21:Contents are rebuilt from git on every deploy
+  #checkov:skip=CKV_AWS_144:Contents are rebuilt from git on every deploy
+  #checkov:skip=CKV_AWS_18:Only Terraform writes here; CloudTrail already records it
+  #checkov:skip=CKV2_AWS_61:Contents are managed by Terraform, nothing piles up
+  #checkov:skip=CKV2_AWS_62:Nothing needs to react to uploads
   bucket        = "${local.name}-web-${local.account_id}"
   force_destroy = true
 }
@@ -47,6 +53,13 @@ data "aws_cloudfront_response_headers_policy" "security" {
 }
 
 resource "aws_cloudfront_distribution" "web" {
+  #checkov:skip=CKV_AWS_174:The default *.cloudfront.net certificate can't set a minimum TLS version; needs a custom domain
+  #checkov:skip=CKV2_AWS_42:No custom domain yet
+  #checkov:skip=CKV_AWS_68:WAF costs more than this app's whole bill; the site is static and the API is throttled
+  #checkov:skip=CKV2_AWS_47:No WAF, see CKV_AWS_68
+  #checkov:skip=CKV_AWS_86:Static public site; API Gateway access logs record the requests that matter
+  #checkov:skip=CKV_AWS_310:Single static origin, S3 is already highly available
+  #checkov:skip=CKV_AWS_374:Open to users everywhere on purpose
   enabled             = true
   comment             = "CloudKavach web app"
   default_root_object = "index.html"

@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/init-amanmishra/cloudkavach/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/init-amanmishra/cloudkavach/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="AWS Lambda" src="https://img.shields.io/badge/AWS-Lambda%20%C2%B7%20API%20Gateway%20%C2%B7%20DynamoDB-232F3E">
   <img alt="Amazon Bedrock" src="https://img.shields.io/badge/Amazon%20Bedrock-Nova%20Lite-232F3E">
   <img alt="Terraform" src="https://img.shields.io/badge/IaC-Terraform-7B42BC">
@@ -145,6 +146,23 @@ Also:
 - The web bucket is private and readable only by CloudFront (Origin Access Control). The only public object is the access-role template, because CloudFormation has to fetch it.
 - CloudFront adds HSTS, `X-Frame-Options` and `X-Content-Type-Options` headers.
 
+### Security pipeline
+
+Every push and pull request runs [CI](.github/workflows/ci.yml). Each job covers a different layer, and all of them must pass:
+
+| Layer | Tool | What it catches |
+|---|---|---|
+| Tests | pytest, `node --check` | Broken logic in pricing, verdicts and API routes; syntax errors in the web app |
+| Secrets | [gitleaks](https://github.com/gitleaks/gitleaks) | Keys or passwords in any commit, not only the latest |
+| Code (SAST) | [Semgrep](https://semgrep.dev) with OWASP Top 10 rules, [Bandit](https://github.com/PyCQA/bandit) | Injection, unsafe calls and insecure patterns in Python and JavaScript |
+| Dependencies | [pip-audit](https://github.com/pypa/pip-audit) | Python packages with known vulnerabilities |
+| Infrastructure | `terraform fmt` and `validate`, [Checkov](https://www.checkov.io) | Misconfigured AWS resources in Terraform and in the access-role template |
+| Live site (DAST) | [OWASP ZAP](https://www.zaproxy.org) baseline, [weekly](.github/workflows/zap.yml) | Missing headers and unsafe responses on the deployed site |
+
+- **The pipeline protects itself.** Actions are pinned to commit SHAs and tools to exact versions, the gitleaks download is checksum-verified, jobs get read-only tokens by default, and Dependabot proposes updates weekly.
+- **Findings appear in GitHub's Security tab** (Semgrep and Checkov upload SARIF reports).
+- **No silent exceptions.** Checkov passes 127 checks. The 48 it flags as not applicable are skipped next to each resource with a one-line reason (`#checkov:skip=ID:reason`), for example "a customer managed KMS key adds cost without protecting anything more here". A new resource still gets checked.
+
 ## Tech stack
 
 | Layer | Service | Why |
@@ -205,6 +223,7 @@ backend/
 frontend/             Static web app (HTML, CSS, JavaScript, official AWS icons; no build step)
 infra/                Terraform for everything, plus the access-role CloudFormation template
 docs/screenshots/     Screenshots used in this README
+.github/              CI with security scans, weekly OWASP ZAP scan, Dependabot
 ```
 
 Only `backend/cloudkavach/*.py` goes into the Lambda package. The CLI and tests never leave your machine.
@@ -213,7 +232,8 @@ Only `backend/cloudkavach/*.py` goes into the Lambda package. The CLI and tests 
 
 - More checks that catch students: SageMaker endpoints and notebooks, OpenSearch domains, ElastiCache, VPC interface endpoints
 - A weekly scheduled scan that emails you when something new starts billing
-- GitHub Actions CI with OIDC (tests, `terraform validate` and `plan` on every pull request)
+- Continuous deployment from GitHub Actions through OIDC (no stored AWS keys), with Terraform state in S3 and a manual approval before `apply`
+- A Content-Security-Policy header, the main finding from the OWASP ZAP scan
 - Sign-in with Amazon Cognito so a connection works across devices
 
 ## What I learned

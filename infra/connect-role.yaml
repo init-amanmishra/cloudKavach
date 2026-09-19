@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CloudKavach access. Creates a read-only scan role, and a separate cleanup role only when
+  AllowCleanup is true. Delete this stack to revoke all access.
+
+Parameters:
+  KavachAccountId:
+    Type: String
+    AllowedPattern: "^\\d{12}$"
+    Description: The AWS account that runs CloudKavach.
+  ExternalId:
+    Type: String
+    MinLength: 16
+    Description: Secret shared only between you and CloudKavach. Leave it as provided.
+  AllowCleanup:
+    Type: String
+    AllowedValues: ["false", "true"]
+    Default: "false"
+    Description: >-
+      Also create the CloudKavachCleanup role, which can stop instances, release idle Elastic IPs,
+      delete NAT Gateways and stop databases when you confirm it in CloudKavach. Nothing that
+      deletes data is ever included.
+
+Conditions:
+  CleanupAllowed: !Equals [!Ref AllowCleanup, "true"]
+
+Resources:
+  # Always created. Can only list resources and read their usage metrics.
+  ScanRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudKavachAccess
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${KavachAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        # Exactly the calls the scanner makes, and nothing else.
+        - PolicyName: ReadBillableResources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeRegions
+                  - ec2:DescribeInstances
+                  - ec2:DescribeNatGateways
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeVolumes
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - rds:DescribeDBInstances
+                  - eks:ListClusters
+                  - cloudwatch:GetMetricStatistics
+                Resource: "*"
+
+  # Only created when you opt in. A separate role, so the scan role can never change anything.
+  CleanupRole:
+    Type: AWS::IAM::Role
+    Condition: CleanupAllowed
+    Properties:
+      RoleName: CloudKavachCleanup
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${KavachAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: SafeCleanup
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StopInstances
+                  - ec2:ReleaseAddress
+                  - ec2:DeleteNatGateway
+                  - rds:StopDBInstance
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: Paste this into CloudKavach.
+    Value: !GetAtt ScanRole.Arn
+  CleanupRoleArn:
+    Condition: CleanupAllowed
+    Description: Used only when you confirm a cleanup. You don't need to paste this.
+    Value: !GetAtt CleanupRole.Arn

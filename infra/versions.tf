@@ -1,5 +1,14 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10" # S3 native state locking
+
+  # Created by bootstrap/. Shared by local runs and GitHub Actions.
+  backend "s3" {
+    bucket       = "cloudkavach-tfstate-513386726901"
+    key          = "cloudkavach/terraform.tfstate"
+    region       = "ap-south-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 
   required_providers {
     aws = {

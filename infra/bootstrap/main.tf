@@ -23,10 +23,12 @@ variable "project" {
   default = "cloudkavach"
 }
 
+# GitHub puts immutable IDs in the OIDC subject ("owner@id/repo@id"), so a deleted and
+# re-created repository with the same name can't use these roles. IDs: api.github.com/repos/<owner>/<repo>
 variable "github_repo" {
-  description = "owner/name exactly as GitHub shows it; the OIDC subject is case-sensitive."
+  description = "OIDC subject prefix: owner@owner_id/repo@repo_id"
   type        = string
-  default     = "init-amanmishra/cloudKavach"
+  default     = "init-amanmishra@286840850/cloudKavach@1376784274"
 }
 
 provider "aws" {

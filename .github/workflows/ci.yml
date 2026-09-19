@@ -1,4 +1,5 @@
 # Runs on every push and pull request. Each job is one layer of checks; all must pass.
+# Then Terraform plans with a read-only role, and on main a deploy waits for approval in the "production" environment.
 # Actions are pinned to commit SHAs and tools to exact versions, so a new release can't change the pipeline silently.
 name: CI
 
@@ -13,7 +14,13 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # never cancel a deploy halfway
+
+env:
+  PLAN_ROLE: arn:aws:iam::513386726901:role/cloudkavach-github-plan
+  DEPLOY_ROLE: arn:aws:iam::513386726901:role/cloudkavach-github-deploy
+  AWS_REGION: ap-south-1
+  TF_VERSION: 1.13.5
 
 jobs:
   test:
@@ -119,3 +126,88 @@ jobs:
         with:
           sarif_file: infra/checkov.sarif
           category: checkov
+
+  plan:
+    name: Terraform plan
+    needs: [test, secrets, code, dependencies, infra]
+    # Pull requests from forks get no AWS credentials.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # exchange GitHub's OIDC token for short-lived AWS credentials
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require the alert email
+        # Without it Terraform would plan to delete the alarm email and the budget.
+        run: test -n "$TF_VAR_alert_email" || { echo "::error::Add the ALERT_EMAIL repository secret"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.PLAN_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform init -input=false
+      # -lock=false: the plan role is read-only, and a plan doesn't change state.
+      - name: terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan > plan.log 2>&1
+          code=$?
+          set -e
+          sed "s/${TF_VAR_alert_email}/***/g" plan.log | tail -n 60
+          [ "$code" -eq 1 ] && exit 1
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Terraform plan"
+            echo '```'
+            terraform show -no-color tfplan | sed "s/${TF_VAR_alert_email}/***/g" | grep -E '^\s+# |^Plan:|^No changes' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to AWS
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production # waits for a reviewer's approval
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: test -n "$TF_VAR_alert_email" || { echo "::error::Add the ALERT_EMAIL repository secret"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform init -input=false
+      # Same commit as the approved plan; applying a fresh saved plan also takes the state lock.
+      - run: terraform plan -input=false -no-color -out=tfplan | sed "s/${TF_VAR_alert_email}/***/g" | tail -n 40
+      - run: terraform apply -input=false -no-color tfplan
+      - name: Smoke test
+        run: |
+          url=$(terraform output -raw website_url)
+          curl -sSf -o /dev/null "$url" && echo "Live: $url" >> "$GITHUB_STEP_SUMMARY"

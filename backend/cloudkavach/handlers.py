@@ -112,7 +112,8 @@ def verify_connection(event, context):
     try:
         scanner.session_for(role_arn, connection["external_id"]).client("sts").get_caller_identity()
     except ClientError:
-        raise HttpError(400, "CloudKavach can't use that role yet. Wait until the stack shows CREATE_COMPLETE, then try again.")
+        raise HttpError(400, "CloudKavach can't use that role yet. Wait until the stack shows CREATE_COMPLETE, then try again. "
+                             "If the stack is from an earlier connection, delete it and create it again from this page.")
     store.mark_connected(connection_id, role_arn, match.group(1))
     return 200, {"status": "connected", "accountId": match.group(1)}
 

@@ -914,6 +914,8 @@
                 <li>Tick the IAM acknowledgement at the bottom, then choose <strong>Create stack</strong>.</li>
               </ul>
               <div class="row">${launch}</div>
+              <p class="hint">Connected before? Delete the old <code>CloudKavachAccess</code> stack first. Every connection
+                gets a new secret key, so an old stack can't be reused and a second one fails with "already exists".</p>
             </div>
           </li>
           <li class="card step">
@@ -1163,7 +1165,8 @@
               target="_blank" rel="noopener noreferrer">Open CloudFormation <span aria-hidden="true">↗</span></a>
             <button class="btn btn-secondary btn-sm" data-action="disconnect">Disconnect this browser</button>
           </div>
-          <p class="hint">Disconnecting only forgets the connection in this browser. Delete the stack to remove access completely.</p>
+          <p class="hint">Disconnecting only forgets the connection in this browser. Delete the stack to remove access
+            completely, and before you connect again: the next connection needs a fresh stack.</p>
         </div>
       </section>`;
   }
